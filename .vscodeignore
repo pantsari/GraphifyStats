@@ -12,6 +12,7 @@ CONTRIBUTING.md
 SECURITY.md
 specs/**
 test/**
+TODO.md
 vitest.config.*
 node_modules/**
 *.vsix
