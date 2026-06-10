@@ -1,76 +1,66 @@
 # Changelog
 
-## [0.2.3] - 2026-06-10
+## [0.3.0] - 2026-06-10
 
-### Activity monitoring (redesigned)
+### Added
 
-- LLM-driven activity signaling via `touch graphify-out/.graphify-activity` or command
-- Setup flow: extension detects unconfigured state, guides user to prompt LLM
+- LLM-driven activity signaling via `touch graphify-out/.graphify-activity` or `indicateActivity` command
+- Setup flow: extension guides user to configure LLM with tested prompt template
 - Configuration marker at `~/.graphify-stats/configured` — LLM creates it during setup
 - Status bar glows green for 30s (configurable) when activity is signaled
-
-### Stats & display
-
-- Delta tracking: shows `+12` / `-3` for node/edge changes between polls
 - Health scoring: Excellent / Good / Fair / Poor based on ambiguous edge ratio
-- `formatCount` fix: 999999 now correctly displays as "1.0M" (not "1000.0K")
+- Density labeling: Sparse / Typical / Dense alongside raw density value
+- Delta tracking: shows `+12` / `-3` for node/edge changes between polls, proportional threshold
+- Confidence-weighted god nodes: EXTRACTED=1.0, INFERRED=0.5, AMBIGUOUS=0.25
+- "Test Activity Glow" QuickPick action: preview green glow without LLM
+- "Rebuild Graph" QuickPick action: copies `graphify update .` to clipboard
+- Billion suffix in `formatCount` (1.5B)
+- Unknown confidence tracking as `OTHER` in confidenceCounts
+- `Cmd+Shift+G Cmd+S` keyboard shortcut for QuickPick
+- Webview rendering of `graph.html` with scripts enabled (D3.js visualization)
+- `accessibilityInformation` aria-label on status bar with activity state
+- `vscode.MarkdownString` tooltips with semantic headings
+- Async I/O via `fs.promises.readFile` for non-blocking graph reads
+- LLM prompt template included in setup command output
+
+### Changed
+
+- Removed all automatic activity detection (file watchers, process monitors)
+- Architecture: `lib/stats.js` extracted with JSDoc typedefs, single state object
+- Polling: `setTimeout` chain replaces `setInterval` (prevents overlapping polls)
+- Removed `isGraphStable` stability delay — mtime caching handles this
+- Status bar icon: `$(pulse)` replaces `$(zap)` during activity
+- Time formatting: `5 min ago` / `3 hr ago` instead of `5m ago` / `3h ago`
+- Activation event: `workspaceContains:graphify-out/graph.json` primary, `onStartupFinished` fallback
+- Polling suspends after 2 null polls (headless/remote VS Code guard)
+- Status bar hides when no workspace folder open
+- `birthtimeMs` cross-platform fallback via `getFileCreationTime()`
+
+### Fixed
+
+- `formatCount(999999)` now correctly displays `1.0M` (was `1000.0K`)
 - Negative count guard: corrupted graphs no longer show negative numbers
-- Last graph rebuild time shown independently from last LLM activity time
-
-### Architecture
-
-- Split pure functions into `lib/stats.js` (computeGraphStats, formatCount, time helpers)
-- Single state object replaces 12 module-level variables
-- Event-driven refresh: `onDidSaveTextDocument` triggers instant re-read for graph.json
-- `onDidChangeWorkspaceFolders` invalidates cached workspace path
-- Mtime caching: skips recomputation when graph.json hasn't changed
-- `healthLabel()` derived metric separates display logic from raw stats
-
-### Performance
-
-- `updateStatusBar` no longer re-reads graph.json if stats are already populated
-- `readGraphStats` compares cached mtime before parsing — returns `{ unchanged: true }`
-- Workspace path cached and invalidated on folder changes only
+- Activity mtime comparison: first touch after file creation no longer missed
+- `configured` marker freshness check uses platform-appropriate creation time
+- Parse error warnings capped at once per session (totalParseErrors tracking)
+- `indicateActivity` rate-limited to once per second
+- `sanitizeText` strips `javascript:` and `data:` URI schemes
+- `handleAction` default case catches unhandled actions with warning
+- Activity source tracked in `lastTriggerSource` for debugging
+- Delta tracking persisted across VS Code restarts via `globalState`
 
 ### Security
 
 - Size guard: graphs >50 MB show summary instead of parsing
-- `graph.html` opens in webview with script/event-handler stripping
+- Webview CSP via options (localResourceRoots restricted)
 - Signal file owner check: rejects touches from non-owner processes on Unix
-- `configured` marker freshness check: only accepts files created after session start
-- All tooltip content sanitized (control chars, backticks, `$`, length-limited)
-
-### Accessibility
-
-- `aria-label` on status bar item for screen readers
-- `accessibilityInformation` with `role: "button"`
-- Green glow paired with text suffix `· active` for colorblind users
-- Unicode box-drawing separators replaced with short text separators
-
-### UX
-
-- QuickPick grouped into "Actions" and "Open" sections
-- `$(repo-sync)` icon for Rebuild Graph (was `$(sync-ignored)`)
-- Delta display suppressed for changes < 5 nodes/edges (reduces noise)
-- `Cmd+Shift+G Cmd+S` keyboard shortcut (was `Cmd+G Cmd+S` — conflicted with Go to Line)
-- Rebuild confirmation tells user stats will refresh automatically
-
-### DevOps
-
-- `prepackage` script: tests + lint run before every vsix build
-- Platform-specific setup commands (Windows cmd vs Unix shell)
-
-### Test coverage (44 tests, up from 25)
-
-- New: `formatDelta`, `sanitizeText`, `healthLabel`, `safeReadGraph`
-- New: `formatCount` negative/rounding edge cases
-- New: `updateStatusBar` and `showQuickPick` export checks
+- PowerShell setup command variant for Windows users
 
 ## [0.2.1] - 2026-06-10
 
 - Fixed activity dot position — now renders after the graph icon, before the label
 - Fixed trigger timestamp — properly updates when graph.json is rebuilt
-- New `graphify-stats.indicateActivity` command — LLM agents can explicitly signal activity
+- New `graphify-stats.indicateActivity` command
 
 ## [0.2.0] - 2026-06-10
 

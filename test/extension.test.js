@@ -417,3 +417,47 @@ describe("pollActivity", () => {
     expect(() => pollActivity()).not.toThrow();
   });
 });
+
+describe("LLM prompt template", () => {
+  it("contains key instructions", () => {
+    const { LLM_PROMPT_TEMPLATE } = require("../extension.js");
+    expect(LLM_PROMPT_TEMPLATE).toContain("graphify");
+    expect(LLM_PROMPT_TEMPLATE).toContain("touch graphify-out/.graphify-activity");
+    expect(LLM_PROMPT_TEMPLATE).toContain("GraphifyStats");
+  });
+
+  it("is a non-empty string", () => {
+    const { LLM_PROMPT_TEMPLATE } = require("../extension.js");
+    expect(LLM_PROMPT_TEMPLATE.length).toBeGreaterThan(100);
+  });
+});
+
+describe("readGraphStats — unchanged detection", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const os = require("os");
+  const { readGraphStats } = require("../lib/stats.js");
+
+  it("returns unchanged:true when mtime matches cache", async () => {
+    const tmpFile = path.join(os.tmpdir(), `graphify-test-${Date.now()}.json`);
+    const graph = {
+      nodes: [{ id: "a", label: "A", source_file: "a.py", community: 1 }],
+      links: [],
+    };
+    fs.writeFileSync(tmpFile, JSON.stringify(graph));
+
+    const first = await readGraphStats(tmpFile, { data: null, summary: false, mtime: undefined });
+    expect(first.unchanged).toBe(false);
+    expect(first.data.nodeCount).toBe(1);
+
+    const second = await readGraphStats(tmpFile, {
+      data: first.data,
+      summary: false,
+      mtime: first.mtime,
+    });
+    expect(second.unchanged).toBe(true);
+    expect(second.data.nodeCount).toBe(1);
+
+    fs.unlinkSync(tmpFile);
+  });
+});

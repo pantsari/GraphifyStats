@@ -1,7 +1,7 @@
 # GraphifyStats — Project Brief
 
 Last updated: 2026-06-10
-Status: planning → implementing
+Status: v0.3.0 preview
 Audience: AI agents, human reviewers, the project owner
 
 ## 1. Executive Summary
@@ -21,69 +21,56 @@ graph of their codebase. The graph lives in `graphify-out/` as local files. Ther
 is no way to see at a glance inside VS Code whether the graph is fresh, how
 many nodes/edges it contains, or when an AI agent last ran `/graphify`.
 
-## 3. User
+## 3. Architecture (v0.3.0)
 
-A VS Code user who uses Graphify with any LLM coding assistant and wants
-to monitor graph stats without leaving the editor.
+### Detection
 
-## 4. Scope
+- `workspaceContains:graphify-out/graph.json` as primary activation event
+- `fs.watch` on `graphify-out/` for near-instant change detection
+- Polling via `setTimeout` chain (sequential, no overlapping) every 5s as backup
+- `onDidSaveTextDocument` triggers immediate re-read for in-editor saves
+- Polling suspends after 2 consecutive null polls (headless/remote guard)
 
-### 4.1 In Scope (v0.1)
+### Activity signaling (LLM-driven)
 
-- Watch `graphify-out/graph.json` for changes via `fs.watchFile` / polling
-- Parse `graph.json` to extract:
-  - Node count
-  - Edge count
-  - Community count (unique community numbers)
-  - File count (unique source_file values)
-  - Top-3 god nodes (nodes with highest edge degree)
-- Status bar text: `Graphify: N nodes · M edges`
-- Tooltip: last-refresh time, community count, file count, god nodes
-- Click: QuickPick with Refresh, Open graph.html, Open GRAPH_REPORT.md
-- Detect when an LLM triggers `/graphify` (file watcher detects changes)
-- Works across all LLM platforms (file-based, no platform-specific hooks needed)
+- Extension monitors `graphify-out/.graphify-activity` mtime
+- LLM touches this file after each graphify command
+- `graphify-stats.indicateActivity` command as alternative for LLMs with VS Code command access
+- Configuration marker at `~/.graphify-stats/configured` — LLM creates during setup
 
-### 4.2 Out of Scope (v0.1)
+### Stats computation
 
-- Running `/graphify` from within the extension (user uses their AI agent)
-- Webview visualization of the graph
-- PR dashboard integration
-- i18n (English only)
-- TypeScript compilation
-- Any backend or external services
+- `lib/stats.js` — pure functions: computeGraphStats, formatCount, healthLabel, etc.
+- Async I/O via `fs.promises.readFile` for non-blocking reads
+- Mtime caching — skips recomputation when graph.json unchanged
+- Size guard: graphs >50 MB show summary only
+- Confidence-weighted god nodes, proportional delta threshold
 
-## 5. Data Model
+### UI
 
-Read from `graphify-out/graph.json`:
+- `extension.js` — activation, state management, polling, UI rendering
+- Status bar with `$(pulse)` icon during activity, green color
+- `vscode.MarkdownString` tooltips with semantic headings
+- `accessibilityInformation` aria-labels with activity state
+- QuickPick with grouped Actions and Open sections
 
-```json
-{
-  "nodes": [
-    {"id": "...", "label": "...", "source_file": "...", "source_location": "L42", "community": N}
-  ],
-  "links": [
-    {"source": "id_a", "target": "id_b", "relation": "calls", "confidence": "EXTRACTED"}
-  ]
-}
+### State
+
+- Single `state` object with JSDoc typedef
+- Persisted to `context.globalState`: setupNotificationShown, previousNodeCount, previousEdgeCount
+- Output channel `graphify-stats` for structured logging
+
+## 4. Zero Runtime Dependencies
+
+Per ADR 0001. All functionality uses Node.js built-ins: `fs`, `path`, `os`.
+No npm runtime dependencies. Dev dependencies only: `@vscode/vsce`, `eslint`, `prettier`, `vitest`.
+
+## 5. Module Structure
+
 ```
-
-Edge confidence values: `EXTRACTED`, `INFERRED`, `AMBIGUOUS`.
-
-## 6. Architecture
-
-Single file `extension.js` using only VS Code Extension API + Node.js built-in
-modules (`fs`, `path`). Zero runtime dependencies.
-
-- `fs.watchFile` or polling (`fs.stat`) to detect `graph.json` changes
-- `fs.readFile` + `JSON.parse` to extract stats
-- VS Code `StatusBarItem` for display + `QuickPick` for actions
-
-## 7. Acceptance Criteria
-
-- AC-1: No `graphify-out/graph.json` → `Graphify: Not found`
-- AC-2: Graph exists → `Graphify: N nodes · M edges`
-- AC-3: Hover tooltip shows last refresh, communities, files, god nodes
-- AC-4: Click → QuickPick with Refresh, Open Graph, Open Report
-- AC-5: Auto-detects when graph.json changes (LLM triggers `/graphify`)
-- AC-6: Refresh re-reads graph.json and updates display
-- AC-7: Works with any LLM platform (file-system based, no hooks)
+extension.js      — activate/deactivate, polling, UI, commands
+lib/stats.js      — computeGraphStats, formatCount, healthLabel, sanitizeText, time helpers
+test/
+  extension.test.js — 58 unit tests
+TODO.md           — ship checklist
+```
