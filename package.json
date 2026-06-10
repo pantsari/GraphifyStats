@@ -1,9 +1,8 @@
 {
   "name": "graphify-stats",
-  "displayName": "GraphifyStats — Knowledge Graph Monitor",
-  "description": "GraphifyStats monitors your Graphify knowledge graph in the VS Code status bar. Shows live node/edge counts, community stats, and god nodes. Your LLM signals activity by touching a file — the status bar glows green for 30 seconds after each trigger. Works with any LLM platform.",
-  "version": "0.3.0",
-  "preview": true,
+  "displayName": "GraphifyStats",
+  "description": "Graphify knowledge graph monitor for the VS Code status bar. One prompt installs, sets up, and configures Graphify through your AI coding agent. See live node/edge counts, community stats, graph health, and recent LLM activity — all at a glance.",
+  "version": "1.0.0"
   "publisher": "pantsari",
   "license": "MIT",
   "icon": "icon.png",
@@ -15,24 +14,27 @@
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Visualization",
     "Other"
   ],
   "keywords": [
     "graphify",
     "knowledge-graph",
-    "graph",
+    "codebase-visualization",
+    "dependency-graph",
+    "code-intelligence",
+    "architecture",
     "stats",
     "monitor",
-    "activity",
     "status-bar",
     "ai",
     "llm",
-    "agent",
-    "claude-code",
-    "opencode",
-    "codex",
-    "cursor",
-    "gemini"
+    "coding-agent",
+    "ai-assistant",
+    "anthropic",
+    "openai",
+    "copilot",
+    "agent"
   ],
   "activationEvents": [
     "workspaceContains:graphify-out/graph.json",
@@ -74,14 +76,7 @@
         "title": "GraphifyStats: Indicate Graphify Activity"
       }
     ],
-    "keybindings": [
-      {
-        "command": "graphify-stats.click",
-        "key": "ctrl+shift+g ctrl+s",
-        "mac": "cmd+shift+g cmd+s",
-        "when": "editorTextFocus"
-      }
-    ]
+    "keybindings": []
   },
   "repository": {
     "type": "git",

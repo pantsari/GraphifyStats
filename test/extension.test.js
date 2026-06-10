@@ -461,3 +461,551 @@ describe("readGraphStats — unchanged detection", () => {
     fs.unlinkSync(tmpFile);
   });
 });
+
+describe("triggerActivity timeout", () => {
+  let mod;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mod = require("../extension.js");
+    mod._initForTesting();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("sets activityActive to true immediately", () => {
+    mod.triggerActivity();
+    expect(mod._getTestState().activityActive).toBe(true);
+  });
+
+  it("resets activityActive to false after timeout", () => {
+    mod.triggerActivity();
+    expect(mod._getTestState().activityActive).toBe(true);
+    vi.advanceTimersByTime(30000);
+    expect(mod._getTestState().activityActive).toBe(false);
+  });
+
+  it("updates lastTriggerTime on each call", () => {
+    const before = Date.now();
+    mod.triggerActivity();
+    expect(mod._getTestState().lastTriggerTime).toBeGreaterThanOrEqual(before);
+  });
+
+  it("clears previous timeout on re-trigger", () => {
+    mod.triggerActivity();
+    vi.advanceTimersByTime(15000);
+    mod.triggerActivity();
+    expect(mod._getTestState().activityActive).toBe(true);
+    vi.advanceTimersByTime(15000);
+    expect(mod._getTestState().activityActive).toBe(true);
+    vi.advanceTimersByTime(15000);
+    expect(mod._getTestState().activityActive).toBe(false);
+  });
+});
+
+describe("pollConfigured detection", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const os = require("os");
+
+  let mod;
+  let tmpDir;
+  let configuredFile;
+
+  beforeEach(() => {
+    mod = require("../extension.js");
+    mod._initForTesting();
+    tmpDir = path.join(
+      os.tmpdir(),
+      `graphify-cfg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    fs.mkdirSync(tmpDir, { recursive: true });
+    configuredFile = path.join(tmpDir, "configured");
+    mod._setTestConfiguredPath(configuredFile);
+  });
+
+  afterEach(() => {
+    try {
+      fs.unlinkSync(configuredFile);
+    } catch {
+      /* ok */
+    }
+    try {
+      fs.rmdirSync(tmpDir);
+    } catch {
+      /* ok */
+    }
+  });
+
+  it("detects configured when marker file exists", () => {
+    fs.writeFileSync(configuredFile, "");
+    mod.pollConfigured();
+    expect(mod._getTestState().configured).toBe(true);
+  });
+
+  it("detects unconfigured when marker file does not exist", () => {
+    mod._setTestState({ configured: false });
+    mod.pollConfigured();
+    expect(mod._getTestState().configured).toBe(false);
+  });
+
+  it("transitions from configured to unconfigured when marker is removed", () => {
+    fs.writeFileSync(configuredFile, "");
+    mod._setTestState({ configured: true });
+    mod.pollConfigured();
+    expect(mod._getTestState().configured).toBe(true);
+
+    fs.unlinkSync(configuredFile);
+    mod.pollConfigured();
+    expect(mod._getTestState().configured).toBe(false);
+  });
+
+  it("transitions from unconfigured to configured when marker appears", () => {
+    mod._setTestState({ configured: false });
+    mod.pollConfigured();
+    expect(mod._getTestState().configured).toBe(false);
+
+    fs.writeFileSync(configuredFile, "");
+    mod.pollConfigured();
+    expect(mod._getTestState().configured).toBe(true);
+  });
+
+  it("is safe to call when state is uninitialized", () => {
+    mod.pollConfigured();
+    // should not throw
+  });
+});
+
+describe("copySetupCommand platform", () => {
+  let mod;
+  const vscode = require("vscode");
+
+  beforeEach(() => {
+    mod = require("../extension.js");
+    mod._initForTesting();
+  });
+
+  it("writes the LLM prompt to clipboard", async () => {
+    const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+    vscode.env.clipboard.writeText = writeTextSpy;
+
+    mod.copySetupCommand();
+
+    expect(writeTextSpy).toHaveBeenCalledTimes(1);
+    const content = writeTextSpy.mock.calls[0][0];
+    expect(content).toContain("graphify");
+    expect(content).toContain("GraphifyStats");
+    expect(content).toContain("graphify-out");
+  });
+
+  it("includes activity signal instructions in clipboard content", async () => {
+    const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+    vscode.env.clipboard.writeText = writeTextSpy;
+
+    mod.copySetupCommand();
+
+    const content = writeTextSpy.mock.calls[0][0];
+    expect(content).toContain("touch graphify-out/.graphify-activity");
+    expect(content).toContain("graphify query");
+    expect(content).toContain("The One Rule");
+  });
+
+  it("shows information message on success", async () => {
+    const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+    const infoSpy = vi.spyOn(vscode.window, "showInformationMessage");
+    vscode.env.clipboard.writeText = writeTextSpy;
+
+    mod.copySetupCommand();
+
+    // Wait for the promise chain to resolve
+    await vi.waitFor(() => {
+      expect(infoSpy).toHaveBeenCalled();
+    });
+
+    const msg = infoSpy.mock.calls[0][0];
+    expect(msg).toContain("copied");
+  });
+});
+
+describe("tooltip caching", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const os = require("os");
+  const vscode = require("vscode");
+
+  let mod;
+  let tmpDir;
+
+  beforeEach(() => {
+    mod = require("../extension.js");
+    mod._initForTesting();
+
+    tmpDir = path.join(
+      os.tmpdir(),
+      `graphify-tooltip-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    const graphifyOut = path.join(tmpDir, "graphify-out");
+    fs.mkdirSync(graphifyOut, { recursive: true });
+
+    const graph = {
+      nodes: [
+        { id: "a", label: "Auth", source_file: "src/auth.py", community: 1 },
+        { id: "b", label: "Database", source_file: "src/db.py", community: 1 },
+        { id: "c", label: "Router", source_file: "src/router.py", community: 2 },
+      ],
+      edges: [
+        { source: "a", target: "b", relation: "calls", confidence: "EXTRACTED" },
+        { source: "c", target: "a", relation: "calls", confidence: "INFERRED" },
+        { source: "c", target: "b", relation: "references", confidence: "AMBIGUOUS" },
+      ],
+    };
+    fs.writeFileSync(path.join(graphifyOut, "graph.json"), JSON.stringify(graph));
+
+    vscode.workspace.workspaceFolders = [{ uri: { fsPath: tmpDir } }];
+  });
+
+  afterEach(() => {
+    vscode.workspace.workspaceFolders = null;
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it("caches tooltip on first render with non-zero hash", async () => {
+    await mod.updateStatusBar();
+
+    const state = mod._getTestState();
+    expect(state.cachedTooltip).not.toBeNull();
+    expect(state.cachedTooltipHash).not.toBe(0);
+  });
+
+  it("reuses cached tooltip when hash matches", async () => {
+    await mod.updateStatusBar();
+
+    const firstTooltip = mod._getTestState().cachedTooltip;
+    const firstHash = mod._getTestState().cachedTooltipHash;
+
+    // reset the statusBar tooltip so we can detect reuse
+    const sb = mod._getStatusBar();
+    sb.tooltip = null;
+
+    await mod.updateStatusBar();
+
+    const state = mod._getTestState();
+    // cachedTooltip should be the same instance since hash didn't change
+    expect(state.cachedTooltip).toBe(firstTooltip);
+    expect(state.cachedTooltipHash).toBe(firstHash);
+    // statusBar.tooltip should be the cached one
+    expect(sb.tooltip).toBe(firstTooltip);
+  });
+
+  it("invalidates cache when state changes that affect hash", async () => {
+    await mod.updateStatusBar();
+
+    const firstTooltip = mod._getTestState().cachedTooltip;
+    const firstHash = mod._getTestState().cachedTooltipHash;
+
+    // Change a field that affects the hash
+    mod._setTestState({ activityActive: true });
+
+    await mod.updateStatusBar();
+
+    const state = mod._getTestState();
+    expect(state.cachedTooltip).not.toBe(firstTooltip);
+    expect(state.cachedTooltipHash).not.toBe(firstHash);
+  });
+
+  it("invalidates cache when configured state changes", async () => {
+    await mod.updateStatusBar();
+
+    const firstTooltip = mod._getTestState().cachedTooltip;
+
+    mod._setTestState({ configured: true });
+
+    await mod.updateStatusBar();
+
+    const state = mod._getTestState();
+    expect(state.cachedTooltip).not.toBe(firstTooltip);
+    expect(state.cachedTooltipHash).not.toBe(0);
+  });
+});
+
+describe("graphChangedAt delta logic", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const os = require("os");
+  const vscode = require("vscode");
+
+  let mod;
+  let tmpDir;
+  let graphJsonPath;
+
+  beforeEach(() => {
+    mod = require("../extension.js");
+    mod._initForTesting();
+
+    tmpDir = path.join(
+      os.tmpdir(),
+      `graphify-delta-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    const graphifyOut = path.join(tmpDir, "graphify-out");
+    fs.mkdirSync(graphifyOut, { recursive: true });
+
+    graphJsonPath = path.join(graphifyOut, "graph.json");
+
+    vscode.workspace.workspaceFolders = [{ uri: { fsPath: tmpDir } }];
+  });
+
+  afterEach(() => {
+    vscode.workspace.workspaceFolders = null;
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  function makeNodes(count) {
+    const nodes = [];
+    for (let i = 0; i < count; i++) {
+      nodes.push({ id: `n${i}`, label: `Node${i}`, source_file: `src/f${i}.py`, community: 1 });
+    }
+    return nodes;
+  }
+
+  function makeEdges(count) {
+    const edges = [];
+    for (let i = 0; i < count; i++) {
+      edges.push({
+        source: `n${i}`,
+        target: `n${(i + 1) % count}`,
+        relation: "calls",
+        confidence: "EXTRACTED",
+      });
+    }
+    return edges;
+  }
+
+  it("shows deltas in status bar when graphChangedAt is recent", async () => {
+    const nodes15 = makeNodes(15);
+    const edges12 = makeEdges(12);
+    fs.writeFileSync(graphJsonPath, JSON.stringify({ nodes: nodes15, edges: edges12 }));
+
+    await mod.updateStatusBar();
+
+    mod._setTestState({
+      graphChangedAt: Date.now(),
+      previousNodeCount: 10,
+      previousEdgeCount: 7,
+    });
+
+    await mod.updateStatusBar();
+
+    const sb = mod._getStatusBar();
+    expect(sb.text).toContain("(+5)");
+  });
+
+  it("hides deltas when graphChangedAt is older than 30s", async () => {
+    const nodes15 = makeNodes(15);
+    const edges12 = makeEdges(12);
+    fs.writeFileSync(graphJsonPath, JSON.stringify({ nodes: nodes15, edges: edges12 }));
+
+    await mod.updateStatusBar();
+
+    mod._setTestState({
+      graphChangedAt: Date.now() - 31000,
+      previousNodeCount: 10,
+      previousEdgeCount: 7,
+    });
+
+    const sb = mod._getStatusBar();
+    sb.text = "";
+
+    await mod.updateStatusBar();
+
+    expect(sb.text).not.toContain("(+5)");
+  });
+
+  it("shows negative deltas when node count decreases", async () => {
+    const nodes5 = makeNodes(5);
+    const edges5 = makeEdges(5);
+    fs.writeFileSync(graphJsonPath, JSON.stringify({ nodes: nodes5, edges: edges5 }));
+
+    await mod.updateStatusBar();
+
+    mod._setTestState({
+      graphChangedAt: Date.now(),
+      previousNodeCount: 10,
+      previousEdgeCount: 10,
+    });
+
+    await mod.updateStatusBar();
+
+    const sb = mod._getStatusBar();
+    expect(sb.text).toContain("(-5)");
+  });
+
+  it("sets status bar color to green for recent graph changes", async () => {
+    const nodes10 = makeNodes(10);
+    fs.writeFileSync(graphJsonPath, JSON.stringify({ nodes: nodes10, edges: [] }));
+
+    await mod.updateStatusBar();
+
+    mod._setTestState({
+      graphChangedAt: Date.now(),
+      previousNodeCount: 5,
+    });
+
+    await mod.updateStatusBar();
+
+    const sb = mod._getStatusBar();
+    expect(sb.color).toBe("#22cc44");
+  });
+});
+
+describe("handleAction", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const os = require("os");
+  const vscode = require("vscode");
+
+  let mod;
+
+  beforeEach(() => {
+    mod = require("../extension.js");
+    mod._initForTesting();
+  });
+
+  describe("refresh", () => {
+    it("resets graph state and shows info message", async () => {
+      const infoSpy = vi.spyOn(vscode.window, "showInformationMessage");
+
+      mod._setTestState({
+        graphStats: { nodeCount: 5, edgeCount: 3 },
+        parseErrorCount: 2,
+        previousNodeCount: 5,
+        previousEdgeCount: 3,
+        lastTriggerSource: "file-touch",
+        cachedTooltip: {},
+      });
+
+      await mod.handleAction("refresh");
+
+      const state = mod._getTestState();
+      expect(state.graphStats).toBeNull();
+      expect(state.parseErrorCount).toBe(0);
+      expect(state.previousNodeCount).toBeNull();
+      expect(state.previousEdgeCount).toBeNull();
+      expect(state.lastTriggerSource).toBe("manual-refresh");
+      expect(state.cachedTooltip).toBeNull();
+      expect(state.cachedTooltipHash).toBe(0);
+      expect(infoSpy).toHaveBeenCalledWith("GraphifyStats refreshed.");
+    });
+  });
+
+  describe("setup-activity", () => {
+    it("sets setupWaiting, updates status bar, and copies command", () => {
+      const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+      vscode.env.clipboard.writeText = writeTextSpy;
+
+      mod.handleAction("setup-activity");
+
+      const state = mod._getTestState();
+      expect(state.setupWaiting).toBe(true);
+      expect(writeTextSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("rebuild", () => {
+    it("copies rebuild command to clipboard and sets rebuildRequestedAt", async () => {
+      const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+      vscode.env.clipboard.writeText = writeTextSpy;
+      const infoSpy = vi.spyOn(vscode.window, "showInformationMessage");
+
+      await mod.handleAction("rebuild");
+
+      expect(writeTextSpy).toHaveBeenCalledWith("graphify update .");
+      expect(mod._getTestState().rebuildRequestedAt).not.toBeNull();
+      expect(mod._getTestState().rebuildRequestedAt).toBeGreaterThan(0);
+      expect(infoSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("open-graph", () => {
+    it("shows warning when graph.html not found (no workspace)", async () => {
+      const warnSpy = vi.spyOn(vscode.window, "showWarningMessage");
+      await mod.handleAction("open-graph");
+      expect(warnSpy).toHaveBeenCalledWith("graphify-out/graph.html not found.");
+    });
+
+    it("opens webview panel when graph.html exists", async () => {
+      const tmpDir = path.join(
+        os.tmpdir(),
+        `graphify-html-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const graphifyOut = path.join(tmpDir, "graphify-out");
+      fs.mkdirSync(graphifyOut, { recursive: true });
+      fs.writeFileSync(path.join(graphifyOut, "graph.html"), "<html>graph</html>");
+
+      vscode.workspace.workspaceFolders = [{ uri: { fsPath: tmpDir } }];
+
+      const webviewSpy = vi.spyOn(vscode.window, "createWebviewPanel");
+      await mod.handleAction("open-graph");
+
+      expect(webviewSpy).toHaveBeenCalled();
+
+      vscode.workspace.workspaceFolders = null;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+  });
+
+  describe("open-report", () => {
+    it("shows warning when report not found (no workspace)", async () => {
+      const warnSpy = vi.spyOn(vscode.window, "showWarningMessage");
+      await mod.handleAction("open-report");
+      expect(warnSpy).toHaveBeenCalledWith("graphify-out/GRAPH_REPORT.md not found.");
+    });
+  });
+
+  describe("open-json", () => {
+    it("shows warning when json not found (no workspace)", async () => {
+      const warnSpy = vi.spyOn(vscode.window, "showWarningMessage");
+      await mod.handleAction("open-json");
+      expect(warnSpy).toHaveBeenCalledWith(
+        "graphify-out/graph.json not found. Run graphify update .",
+      );
+    });
+  });
+
+  describe("copy-setup", () => {
+    it("copies install command to clipboard and shows info", async () => {
+      const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+      vscode.env.clipboard.writeText = writeTextSpy;
+      const infoSpy = vi.spyOn(vscode.window, "showInformationMessage");
+
+      await mod.handleAction("copy-setup");
+
+      expect(writeTextSpy).toHaveBeenCalledWith(
+        "uv tool install graphifyy && graphify install && graphify .",
+      );
+      expect(infoSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("learn-more", () => {
+    it("opens graphifylabs.ai URL", async () => {
+      const openExternalSpy = vi.fn().mockResolvedValue(true);
+      vscode.env.openExternal = openExternalSpy;
+
+      await mod.handleAction("learn-more");
+
+      expect(openExternalSpy).toHaveBeenCalledTimes(1);
+      const uri = openExternalSpy.mock.calls[0][0];
+      expect(uri.toString()).toContain("graphifylabs.ai");
+    });
+  });
+});

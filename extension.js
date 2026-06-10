@@ -31,12 +31,26 @@ const INACTIVITY_WARN_MS = 24 * 60 * 60 * 1000;
 const HOME_CONFIG_DIR = path.join(os.homedir(), ".graphify-stats");
 const CONFIGURED_FILE = "configured";
 
-const LLM_PROMPT_TEMPLATE = `Add this instruction to your LLM's rules / AGENTS.md / system prompt:
+function loadLlmPrompt() {
+  try {
+    const promptPath = path.join(__dirname, "GraphifyLLMsetup.md");
+    if (fs.existsSync(promptPath)) {
+      return fs.readFileSync(promptPath, "utf-8").trim();
+    }
+  } catch {
+    /* fall back to inline */
+  }
+  return [
+    "Add this instruction to your LLM's rules / AGENTS.md / system prompt:",
+    "",
+    "From now on, after every graphify command you run (query, explain, path, update), also execute:",
+    "  touch graphify-out/.graphify-activity",
+    "",
+    "This signals the GraphifyStats VS Code extension that you're actively using the knowledge graph.",
+  ].join("\n");
+}
 
-From now on, after every graphify command you run (query, explain, path, update), also execute:
-  touch graphify-out/.graphify-activity
-
-This signals the GraphifyStats VS Code extension that you're actively using the knowledge graph.`;
+const LLM_PROMPT_TEMPLATE = loadLlmPrompt();
 
 /** @type {vscode.StatusBarItem} */
 let statusBar;
@@ -67,9 +81,11 @@ let outputChannel;
  * @property {boolean} pollingSuspended
  * @property {string} lastTriggerSource
  * @property {number|null} rebuildRequestedAt
+ * @property {number|null} graphChangedAt
  * @property {number} lastPollCompletion
  * @property {string|null} cachedTooltip
  * @property {number} cachedTooltipHash
+ * @property {boolean} deactivated
  */
 
 /** @type {ExtensionState} */
@@ -101,9 +117,11 @@ function initState() {
     pollingSuspended: false,
     lastTriggerSource: "none",
     rebuildRequestedAt: null,
+    graphChangedAt: null,
     lastPollCompletion: Date.now(),
     cachedTooltip: null,
     cachedTooltipHash: 0,
+    deactivated: false,
   };
 }
 
@@ -143,7 +161,7 @@ function activate(context) {
 
     const workspaceRoot = getActiveWorkspacePath();
 
-    statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
     statusBar.command = "graphify-stats.click";
     statusBar.accessibilityInformation = {
       label: "GraphifyStats — knowledge graph monitor",
@@ -245,6 +263,7 @@ function triggerRateLimited() {
 }
 
 function stopPolling() {
+  state.deactivated = true;
   if (timers.stats) {
     clearTimeout(timers.stats);
     timers.stats = null;
@@ -306,7 +325,9 @@ function startPolling() {
     const activityPath = path.join(dir, GRAPHIFY_ACTIVITY);
     if (fs.existsSync(activityPath)) {
       try {
-        state.lastActivityMtime = fs.statSync(activityPath).mtimeMs;
+        const activityStat = fs.statSync(activityPath);
+        state.lastActivityMtime = activityStat.mtimeMs;
+        state.lastTriggerTime = activityStat.mtimeMs;
       } catch {
         /* skip */
       }
@@ -323,7 +344,28 @@ function startPolling() {
 }
 
 function scheduleNextStatsPoll() {
-  if (state.pollingSuspended) return;
+  if (state.deactivated) return;
+
+  if (state.pollingSuspended) {
+    timers.stats = setTimeout(async () => {
+      const graphPath = getGraphPath();
+      if (graphPath && fs.existsSync(graphPath)) {
+        state.pollingSuspended = false;
+        state.nullPollCount = 0;
+        log("INFO", "polling resumed — graphify-out/ detected after suspension");
+        await pollStats();
+        state.lastPollCompletion = Date.now();
+        if (!state.pollingSuspended) {
+          scheduleNextStatsPoll();
+          startWatchdog();
+        }
+      } else {
+        scheduleNextStatsPoll();
+      }
+    }, 10000);
+    return;
+  }
+
   const intervalS = getPollInterval();
   timers.stats = setTimeout(async () => {
     await pollStats();
@@ -369,6 +411,11 @@ function pollConfigured() {
     const configuredPath = getConfiguredPath();
     const exists = fs.existsSync(configuredPath);
     if (exists && !state.configured) {
+      state.configured = true;
+      state.setupWaiting = false;
+      updateStatusBar();
+      log("INFO", "configured marker detected");
+
       let fresh = true;
       try {
         const st = fs.statSync(configuredPath);
@@ -378,13 +425,9 @@ function pollConfigured() {
         /* accept anyway */
       }
       if (fresh) {
-        state.configured = true;
-        state.setupWaiting = false;
         vscode.window.showInformationMessage(
           "GraphifyStats: Activity monitoring configured. Status bar glows green when your LLM runs Graphify.",
         );
-        updateStatusBar();
-        log("INFO", "configured marker detected");
       }
     } else if (!exists && state.configured) {
       state.configured = false;
@@ -403,30 +446,28 @@ function pollActivity() {
   if (!outDir) return;
 
   const activityPath = path.join(outDir, GRAPHIFY_ACTIVITY);
-  if (!fs.existsSync(activityPath)) {
+
+  if (fs.existsSync(activityPath)) {
+    try {
+      const stat = fs.statSync(activityPath);
+
+      if (process.platform === "win32" || stat.uid === process.getuid()) {
+        if (state.lastActivityMtime !== 0 && stat.mtimeMs !== state.lastActivityMtime) {
+          state.lastTriggerSource = "file-touch";
+          triggerActivity();
+          state.lastActivityMtime = stat.mtimeMs;
+          log("INFO", `activity file touched, mtime ${stat.mtimeMs}`);
+        } else if (state.lastActivityMtime === 0) {
+          state.lastActivityMtime = stat.mtimeMs;
+          state.lastTriggerTime = stat.mtimeMs;
+        }
+      }
+    } catch {
+      /* skip */
+    }
+  } else {
     state.lastActivityMtime = 0;
-    return;
-  }
-
-  try {
-    const stat = fs.statSync(activityPath);
-
-    if (process.platform !== "win32" && stat.uid !== process.getuid()) return;
-
-    if (state.lastActivityMtime === 0) {
-      state.lastActivityMtime = stat.mtimeMs;
-      return;
-    }
-
-    if (stat.mtimeMs !== state.lastActivityMtime) {
-      state.lastTriggerSource = "file-touch";
-      triggerActivity();
-      updateStatusBar();
-      state.lastActivityMtime = stat.mtimeMs;
-      log("INFO", `activity file touched, mtime ${stat.mtimeMs}`);
-    }
-  } catch {
-    /* skip */
+    state.lastTriggerTime = null;
   }
 }
 
@@ -444,8 +485,13 @@ async function pollStats() {
       state.graphStats = null;
       state.previousNodeCount = null;
       state.previousEdgeCount = null;
+      state.lastGraphMtime = null;
       state.parseErrorCount = 0;
-      updateStatusBar();
+      try {
+        updateStatusBar();
+      } catch {
+        /* ignore */
+      }
     }
     return;
   }
@@ -481,18 +527,16 @@ async function pollStats() {
         const nodeDiff = stats.nodeCount - state.graphStats.nodeCount;
         const pctChange =
           state.graphStats.nodeCount > 0 ? Math.abs(nodeDiff) / state.graphStats.nodeCount : 0;
-        if (pctChange > 0.1 && Math.abs(nodeDiff) >= 5) {
-          const sign = nodeDiff > 0 ? "+" : "";
-          vscode.window.showInformationMessage(
-            `Graphify: graph changed from ${formatCount(state.graphStats.nodeCount)} to ${formatCount(stats.nodeCount)} nodes (${sign}${nodeDiff}).`,
-          );
-        }
 
         state.previousNodeCount = state.graphStats.nodeCount;
         state.previousEdgeCount = state.graphStats.edgeCount;
         if (state.context) {
           state.context.globalState.update("previousNodeCount", state.graphStats.nodeCount);
           state.context.globalState.update("previousEdgeCount", state.graphStats.edgeCount);
+        }
+
+        if (pctChange > 0.1 && Math.abs(nodeDiff) >= 5) {
+          state.graphChangedAt = Date.now();
         }
       }
 
@@ -502,9 +546,7 @@ async function pollStats() {
 
       if (state.rebuildRequestedAt && previousMtime !== state.lastGraphMtime) {
         state.rebuildRequestedAt = null;
-        vscode.window.showInformationMessage(
-          `Graph rebuilt: ${formatCount(stats.nodeCount)} N · ${formatCount(stats.edgeCount)} E.`,
-        );
+        state.graphChangedAt = Date.now();
       }
 
       log(
@@ -604,7 +646,10 @@ function getGraphifyOutPath() {
   return path.join(base, GRAPHIFY_OUT);
 }
 
+let _testConfiguredPath = null;
+
 function getConfiguredPath() {
+  if (_testConfiguredPath) return _testConfiguredPath;
   return path.join(HOME_CONFIG_DIR, CONFIGURED_FILE);
 }
 
@@ -621,75 +666,93 @@ function tooltipStateHash() {
   );
 }
 
-function updateStatusBar() {
-  const workspaceRoot = getActiveWorkspacePath();
+async function updateStatusBar() {
+  try {
+    const workspaceRoot = getActiveWorkspacePath();
 
-  if (!workspaceRoot) {
-    statusBar.hide();
-    return;
+    if (!workspaceRoot) {
+      statusBar.hide();
+      return;
+    }
+
+    statusBar.show();
+
+    const graphPath = getGraphPath();
+    const outDir = getGraphifyOutPath();
+    const outDirExists = outDir && fs.existsSync(outDir);
+
+    if (!outDirExists) {
+      const expectedPath = workspaceRoot
+        ? path.join(workspaceRoot, GRAPHIFY_OUT, GRAPH_JSON)
+        : "graphify-out/graph.json";
+      statusBar.text = "$(graph) Graphify: Not set up";
+      statusBar.tooltip = new vscode.MarkdownString(
+        [
+          `Expected: \`${expectedPath}\``,
+          "",
+          "GraphifyStats monitors your knowledge graph in the VS Code status bar.",
+          "",
+          "Install Graphify: `uv tool install graphifyy && graphify install && graphify .`",
+          "",
+          "Click for options.",
+        ].join("\n"),
+        true,
+      );
+      statusBar.color = undefined;
+      state.graphStats = null;
+      state.graphSummary = null;
+      state.lastGraphMtime = null;
+      return;
+    }
+
+    if (!fs.existsSync(graphPath)) {
+      statusBar.text = "$(graph) Graphify: Run graphify update";
+      statusBar.tooltip = new vscode.MarkdownString(
+        [
+          `Expected: \`${graphPath}\``,
+          "",
+          "The `graphify-out/` directory exists but `graph.json` is missing.",
+          "Run `graphify update .` or ask your LLM to rebuild the graph.\n\nClick for options.",
+        ].join("\n"),
+        true,
+      );
+      statusBar.color = undefined;
+      state.graphStats = null;
+      state.graphSummary = null;
+      state.lastGraphMtime = null;
+      return;
+    }
+
+    if (!state.graphStats && !state.graphSummary) {
+      await loadInitialStats(graphPath);
+    }
+
+    if (state.graphSummary) {
+      renderSummaryStatus();
+      return;
+    }
+
+    const stats = state.graphStats;
+    if (!stats) return;
+
+    if (stats.nodeCount === 0 && stats.edgeCount === 0) {
+      statusBar.text = "$(info) Graphify: Empty graph";
+      statusBar.tooltip = new vscode.MarkdownString(
+        [
+          "Empty graph — no nodes or edges extracted yet.",
+          "",
+          "Run `graphify .` in your terminal or ask your LLM to build the graph.\n\nClick for options.",
+        ].join("\n"),
+        true,
+      );
+      statusBar.color = undefined;
+      return;
+    }
+
+    renderStatsStatus(stats);
+  } catch (e) {
+    log("ERROR", `updateStatusBar failed: ${e && e.message ? e.message : e}`);
   }
-
-  statusBar.show();
-
-  const graphPath = getGraphPath();
-
-  if (!graphPath || !fs.existsSync(graphPath)) {
-    const expectedPath = workspaceRoot
-      ? path.join(workspaceRoot, GRAPHIFY_OUT, GRAPH_JSON)
-      : "graphify-out/graph.json";
-    statusBar.text = "$(graph) Graphify: Not found";
-    statusBar.tooltip = new vscode.MarkdownString(
-      [
-        `Expected: \`${expectedPath}\``,
-        "",
-        "**GraphifyStats** monitors your knowledge graph in the VS Code status bar.",
-        "When your LLM uses Graphify, the status bar glows green for 30 seconds.",
-        "",
-        "**Get started:**",
-        "1. Install Graphify: `uv tool install graphifyy && graphify install && graphify .`",
-        "2. Click the status bar to open options.",
-        "3. Run Setup Activity Monitoring to configure your LLM.",
-        "",
-        "Click for one-click setup.",
-      ].join("\n"),
-      true,
-    );
-    statusBar.color = undefined;
-    state.graphStats = null;
-    state.graphSummary = null;
-    state.lastGraphMtime = null;
-    return;
-  }
-
-  if (!state.graphStats && !state.graphSummary) {
-    loadInitialStats(graphPath);
-  }
-
-  if (state.graphSummary) {
-    renderSummaryStatus();
-    return;
-  }
-
-  const stats = state.graphStats;
-  if (!stats) return;
-
-  if (stats.nodeCount === 0 && stats.edgeCount === 0) {
-    statusBar.text = "$(info) Graphify: Empty graph";
-    statusBar.tooltip = new vscode.MarkdownString(
-      [
-        "**Empty graph** — no nodes or edges extracted yet.",
-        "",
-        "Run `graphify .` in your terminal or ask your LLM to build the graph.",
-        "",
-        "Click for options.",
-      ].join("\n"),
-      true,
-    );
-    statusBar.color = undefined;
-    return;
-  }
-
-  renderStatsStatus(stats);
 }
 
 async function loadInitialStats(graphPath) {
@@ -709,12 +772,12 @@ async function loadInitialStats(graphPath) {
       state.parseErrorCount++;
       statusBar.text = "$(error) Graphify: Parse error";
       statusBar.tooltip =
-        "Failed to parse graph.json. The file may be malformed or incomplete.\n\nClick for options";
+        "Failed to parse graph.json. The file may be malformed, incomplete, or a JSON parse error occurred.\n\nClick for options";
       statusBar.color = undefined;
     }
-  } catch {
+  } catch (err) {
     statusBar.text = "$(error) Graphify: Parse error";
-    statusBar.tooltip = "Failed to parse graph.json.\n\nClick for options";
+    statusBar.tooltip = `Failed to read or parse graph.json: ${err && err.message ? err.message : "unknown error"}\n\nClick for options`;
     statusBar.color = undefined;
   }
 }
@@ -732,45 +795,63 @@ function renderSummaryStatus() {
 }
 
 function renderStatsStatus(stats) {
-  const timeAgoShort = getTimeAgoShort(stats.lastRefreshed);
-  const nodeDelta = formatDelta(stats.nodeCount, state.previousNodeCount);
-  const edgeDelta = formatDelta(stats.edgeCount, state.previousEdgeCount);
+  const safeRefreshed = stats.lastRefreshed || new Date();
+  const timeAgoShort = getTimeAgoShort(safeRefreshed);
+
+  const graphChangedRecently =
+    state.graphChangedAt !== null && Date.now() - state.graphChangedAt < getActivityDurationMs();
+  const nodeDelta = graphChangedRecently
+    ? formatDelta(stats.nodeCount, state.previousNodeCount)
+    : "";
+  const edgeDelta = graphChangedRecently
+    ? formatDelta(stats.edgeCount, state.previousEdgeCount)
+    : "";
+
   const hLabel = healthLabel(stats.ambiguousRatio, stats.edgeCount);
   const dLabel = densityLabel(stats.density);
-  const activitySuffix = state.activityActive && state.configured ? " · active" : "";
 
-  let icon = "$(graph)";
-  if (state.activityActive && state.configured) {
-    icon = "$(pulse)";
+  let triggerSuffix = "";
+  if (state.configured && state.lastTriggerTime) {
+    const triggerAge = getTimeAgoShort(new Date(state.lastTriggerTime));
+    triggerSuffix = ` · ${triggerAge}`;
   }
+
+  const icon = "$(graph)";
 
   statusBar.text =
     `${icon} Graphify: ${formatCount(stats.nodeCount)} N${nodeDelta} · ` +
-    `${formatCount(stats.edgeCount)} E${edgeDelta} · ${timeAgoShort}${activitySuffix}`;
+    `${formatCount(stats.edgeCount)} E${edgeDelta} · ${timeAgoShort}${triggerSuffix}`;
+  let a11yLabel = `GraphifyStats: ${stats.nodeCount} nodes, ${stats.edgeCount} edges, last refreshed ${timeAgoShort}${triggerSuffix}${
+    state.activityActive ? ", LLM activity detected" : ""
+  }`;
+  if (a11yLabel.length > 200) {
+    a11yLabel = a11yLabel.slice(0, 200) + "...";
+  }
   statusBar.accessibilityInformation = {
-    label: `GraphifyStats: ${stats.nodeCount} nodes, ${stats.edgeCount} edges, last refreshed ${timeAgoShort}${activitySuffix}${
-      state.activityActive ? ", LLM activity detected" : ""
-    }`,
+    label: a11yLabel,
     role: "button",
   };
 
-  if (state.activityActive && state.configured) {
-    statusBar.color = "#22cc44";
-  } else if (stats.ambiguousRatio > AMBIGUOUS_WARN_THRESHOLD && stats.edgeCount > 0) {
-    statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
-  } else {
-    const hoursStale = (Date.now() - stats.lastRefreshed.getTime()) / 3600000;
-    if (hoursStale > 6) {
-      statusBar.color = new vscode.ThemeColor("statusBarItem.errorForeground");
-    } else if (hoursStale > 1) {
-      statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
-    } else {
-      statusBar.color = undefined;
+  if (isActivityEnabled()) {
+    if (graphChangedRecently) {
+      statusBar.color = "#22cc44";
+    } else if (state.activityActive && state.configured) {
+      statusBar.color = "#22cc44";
     }
   }
-
-  if (state.lastTriggerTime === null && stats.lastRefreshed) {
-    state.lastTriggerTime = stats.lastRefreshed.getTime();
+  if (!statusBar.color) {
+    if (stats.ambiguousRatio > AMBIGUOUS_WARN_THRESHOLD && stats.edgeCount > 0) {
+      statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
+    } else {
+      const hoursStale = (Date.now() - safeRefreshed.getTime()) / 3600000;
+      if (hoursStale > 6) {
+        statusBar.color = new vscode.ThemeColor("statusBarItem.errorForeground");
+      } else if (hoursStale > 1) {
+        statusBar.color = new vscode.ThemeColor("statusBarItem.warningForeground");
+      } else {
+        statusBar.color = undefined;
+      }
+    }
   }
 
   const hash = tooltipStateHash();
@@ -789,135 +870,84 @@ function buildTooltip(stats, hLabel, dLabel) {
   const tooltipMd = new vscode.MarkdownString("", true);
   tooltipMd.isTrusted = true;
 
-  const timeAgo = getTimeAgo(stats.lastRefreshed);
-  const lines = [`**GraphifyStats** — last refreshed ${timeAgo}`];
+  const lines = [];
 
-  if (stats.lastRefreshed) {
-    const modifiedAgo = getTimeAgo(stats.lastRefreshed);
-    lines.push(`Graph last rebuilt ${modifiedAgo}`);
-  }
-
-  if (state.configured && state.lastTriggerTime) {
-    const triggerAgo = getTimeAgo(new Date(state.lastTriggerTime));
-    lines.push(`Last LLM activity ${triggerAgo}  (via ${state.lastTriggerSource})`);
-
-    const msSinceTrigger = Date.now() - state.lastTriggerTime;
-    if (msSinceTrigger > INACTIVITY_WARN_MS) {
-      const daysSince = Math.floor(msSinceTrigger / 86400000);
-      lines.push(
-        `⚠ **Warning:** No activity detected in ${daysSince} day${daysSince !== 1 ? "s" : ""}. Your LLM may not be signaling Graphify usage. Verify setup.`,
-      );
-    }
-  }
-
-  const confidenceText =
-    `E:${stats.confidenceCounts.EXTRACTED.toLocaleString()}  ` +
-    `I:${stats.confidenceCounts.INFERRED.toLocaleString()}  ` +
-    `A:${stats.confidenceCounts.AMBIGUOUS.toLocaleString()}` +
-    (stats.confidenceCounts.OTHER > 0
-      ? `  O:${stats.confidenceCounts.OTHER.toLocaleString()}`
-      : "");
-
-  let remediationLine = "";
-  if (stats.ambiguousRatio > 0.3 && stats.edgeCount > 0) {
-    remediationLine =
-      "  — Run `graphify update .` to re-extract, or review flagged edges in `graph.json`.";
-  }
+  const nodeDelta = formatDelta(stats.nodeCount, state.previousNodeCount);
+  const edgeDelta = formatDelta(stats.edgeCount, state.previousEdgeCount);
 
   lines.push(
-    `---`,
-    `**Graph size**    ${stats.nodeCount.toLocaleString()} nodes  ·  ${stats.edgeCount.toLocaleString()} edges`,
-    `**Density**       ${stats.density.toFixed(2)} edges/node  (${dLabel})`,
-    `**Communities**   ${stats.communityCount}`,
-    `**Files**         ${stats.fileCount}`,
-    `---`,
-    `**Health**        ${hLabel}  (${(stats.ambiguousRatio * 100).toFixed(0)}% ambiguous)${remediationLine}`,
-    `**Confidence**    ${confidenceText}`,
+    `${stats.nodeCount.toLocaleString("en-US")} nodes${nodeDelta}  ·  ${stats.edgeCount.toLocaleString("en-US")} edges${edgeDelta}  ·  ` +
+      `${stats.communityCount} communities  ·  ${stats.fileCount} files`,
   );
 
+  const confidence =
+    `E ${stats.confidenceCounts.EXTRACTED.toLocaleString("en-US")}  ` +
+    `I ${stats.confidenceCounts.INFERRED.toLocaleString("en-US")}  ` +
+    `A ${stats.confidenceCounts.AMBIGUOUS.toLocaleString("en-US")}` +
+    (stats.confidenceCounts.OTHER > 0
+      ? `  O ${stats.confidenceCounts.OTHER.toLocaleString("en-US")}`
+      : "");
+
+  lines.push(
+    `Density ${(stats.density || 0).toFixed(2)} (${dLabel})  ·  Health ${hLabel} (${(stats.ambiguousRatio * 100).toFixed(0)}% ambiguous)`,
+  );
+  lines.push(confidence);
+
+  if (stats.ambiguousRatio > 0.3 && stats.edgeCount > 0) {
+    lines.push("Run `graphify update .` to re-extract flagged edges.");
+  }
+
   if (stats.godNodes.length > 0) {
-    lines.push(`---`, `**Top god nodes**`);
+    lines.push("");
+    lines.push("Top god nodes");
     for (const gn of stats.godNodes) {
       const displayName = gn.sourceFile
         ? `${sanitizeText(gn.sourceFile)}:${sanitizeText(gn.label)}`
         : sanitizeText(gn.label);
-      lines.push(`- ${displayName}  (${gn.degree} connections)`);
+      lines.push(`  ${displayName} — ${gn.degree}`);
+    }
+  }
+
+  lines.push("");
+
+  const timeAgo = getTimeAgo(stats.lastRefreshed || new Date());
+  lines.push(`Refreshed ${timeAgo}`);
+
+  if (state.configured && state.lastTriggerTime) {
+    const triggerAgo = getTimeAgo(new Date(state.lastTriggerTime));
+    lines.push(`Last activity ${triggerAgo} (${state.lastTriggerSource || "unknown"})`);
+
+    const msSinceTrigger = Date.now() - state.lastTriggerTime;
+    if (msSinceTrigger > INACTIVITY_WARN_MS) {
+      const daysSince = Math.floor(msSinceTrigger / 86400000);
+      lines.push(`\u26a0 No activity in ${daysSince}d \u2014 verify LLM setup.`);
     }
   }
 
   if (!state.configured) {
-    lines.push(
-      `---`,
-      `**Activity monitoring not configured**`,
-      ``,
-      `Tell your LLM: "Configure GraphifyStats activity monitoring"`,
-      ``,
-      `Or click → Setup Activity Monitoring to copy the command.`,
-    );
+    lines.push("", "Activity monitoring not configured \u2014 click to set up");
   } else if (state.setupWaiting) {
-    lines.push(`---`, `Setup command copied — waiting for LLM to complete setup.`);
+    lines.push("", "Waiting for LLM to complete setup\u2026");
   }
 
   if (state.activityActive && state.configured) {
-    lines.push(`---`, `Ask your LLM: "What did you just do with Graphify?"`);
+    lines.push("", 'Ask your LLM: "What did you just do with Graphify?"');
   }
 
-  lines.push(`---`, `Click for options  (Cmd+Shift+G Cmd+S)`);
+  lines.push("", "Click for options");
   tooltipMd.appendMarkdown(lines.join("\n"));
   return tooltipMd;
 }
 
 function copySetupCommand() {
-  const isWin = process.platform === "win32";
-  const mkdir = isWin
-    ? 'mkdir "%USERPROFILE%\\.graphify-stats" 2>NUL & type NUL > "%USERPROFILE%\\.graphify-stats\\configured"'
-    : "mkdir -p ~/.graphify-stats && touch ~/.graphify-stats/configured";
-
-  const touch = isWin
-    ? "type NUL > graphify-out\\.graphify-activity"
-    : "touch graphify-out/.graphify-activity";
-
-  const psMkdir = isWin
-    ? 'New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\\.graphify-stats" | Out-Null; New-Item -ItemType File -Force -Path "$env:USERPROFILE\\.graphify-stats\\configured" | Out-Null'
-    : "";
-
-  const psTouch = isWin
-    ? "New-Item -ItemType File -Force -Path graphify-out\\.graphify-activity | Out-Null"
-    : "";
-
-  let cmd = [
-    "**Shell commands:**",
-    "```",
-    `1. ${mkdir}`,
-    "2. After every graphify command (query, explain, path, update), also run:",
-    `   ${touch}`,
-    "```",
-  ];
-
-  if (isWin) {
-    cmd.push(
-      "",
-      "**PowerShell commands:**",
-      "```",
-      `1. ${psMkdir}`,
-      "2. After every graphify command, also run:",
-      `   ${psTouch}`,
-      "```",
-    );
-  }
-
-  cmd.push("", "**LLM prompt (give this to your AI agent):**", "```", LLM_PROMPT_TEMPLATE, "```");
-
-  const fullCmd = cmd.join("\n");
-
-  vscode.env.clipboard.writeText(fullCmd).then(
+  vscode.env.clipboard.writeText(LLM_PROMPT_TEMPLATE).then(
     () => {
       vscode.window.showInformationMessage(
-        "Setup commands and LLM prompt copied! Paste to your LLM. The status bar glows green when Graphify is used.",
+        "Prompt copied! Paste it to your AI agent to finish setting up Graphify.",
       );
     },
     () => {
-      vscode.window.showErrorMessage("Failed to copy to clipboard. Copy manually:\n\n" + fullCmd, {
+      vscode.window.showErrorMessage("Failed to copy to clipboard.", {
         modal: true,
       });
     },
@@ -930,23 +960,42 @@ async function showQuickPick() {
   if (state.graphStats) {
     const stats = state.graphStats;
     const hLabel = healthLabel(stats.ambiguousRatio, stats.edgeCount);
-    items.push({
-      label: "$(graph) Graph Stats",
-      description: `${formatCount(stats.nodeCount)} N · ${formatCount(stats.edgeCount)} E`,
-      detail: `${stats.communityCount} communities · ${stats.fileCount} files · ${hLabel} health · refreshed ${getTimeAgo(stats.lastRefreshed)}`,
-      alwaysShow: true,
-    });
-    items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
 
     if (!state.configured) {
       items.push({
-        label: "$(plug) Setup Activity Monitoring",
+        label: "Setup Activity Monitoring",
         description: "Copy setup commands and LLM prompt to clipboard",
+        iconPath: new vscode.ThemeIcon("plug", new vscode.ThemeColor("editorWarning.foreground")),
         alwaysShow: true,
         action: "setup-activity",
       });
       items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
+    } else if (state.lastTriggerTime) {
+      const triggerAgo = getTimeAgo(new Date(state.lastTriggerTime));
+      items.push({
+        label: `$(pulse) Last activity ${triggerAgo}`,
+        description: state.lastTriggerSource
+          ? `via ${state.lastTriggerSource}`
+          : "LLM activity detected",
+        alwaysShow: true,
+      });
+      items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
+    } else {
+      items.push({
+        label: "$(plug) Activity monitoring configured",
+        description: "Status bar shows trigger times after first LLM activity",
+        alwaysShow: true,
+      });
+      items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
     }
+
+    items.push({
+      label: "$(graph) Graph Stats",
+      description: `${formatCount(stats.nodeCount)} N · ${formatCount(stats.edgeCount)} E`,
+      detail: `${stats.communityCount} communities · ${stats.fileCount} files · ${hLabel} health · refreshed ${getTimeAgo(stats.lastRefreshed || new Date())}`,
+      alwaysShow: true,
+    });
+    items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
 
     items.push(
       { label: "Actions", kind: vscode.QuickPickItemKind.Separator },
@@ -961,12 +1010,6 @@ async function showQuickPick() {
         description: "Copies 'graphify update .' to clipboard — paste to your LLM",
         alwaysShow: true,
         action: "rebuild",
-      },
-      {
-        label: "$(flame) Test Activity Glow",
-        description: "Simulate an activity trigger to preview the green glow",
-        alwaysShow: true,
-        action: "test-glow",
       },
       { label: "", kind: vscode.QuickPickItemKind.Separator },
       { label: "Open", kind: vscode.QuickPickItemKind.Separator },
@@ -988,17 +1031,31 @@ async function showQuickPick() {
         alwaysShow: true,
         action: "open-json",
       },
+      { label: "", kind: vscode.QuickPickItemKind.Separator },
+      {
+        label: isActivityEnabled()
+          ? "$(eye) Green indicators: On"
+          : "$(eye-closed) Green indicators: Off",
+        description: "Toggle green glow for activity and graph updates",
+        alwaysShow: true,
+        action: "toggle-green",
+      },
+      {
+        label: "$(plug) Run Setup Again",
+        description: "Re-copy setup commands and LLM prompt to clipboard",
+        alwaysShow: true,
+        action: "setup-activity",
+      },
     );
   } else {
     items.push(
       {
-        label: "$(clippy) Copy Graphify Install Command",
-        description: "uv tool install graphifyy && graphify install && graphify .",
-        detail:
-          "Graphify builds a knowledge graph your AI can search — faster answers, fewer mistakes.",
+        label: "$(sparkle) One Prompt: Install & Setup Graphify",
+        description: "Copy the full LLM prompt — paste to your AI agent to set up everything",
         alwaysShow: true,
-        action: "copy-setup",
+        action: "setup-activity",
       },
+      { label: "", kind: vscode.QuickPickItemKind.Separator },
       {
         label: "$(globe) Learn More",
         description: "Open graphifylabs.ai",
@@ -1054,7 +1111,6 @@ async function handleAction(action) {
       break;
     case "setup-activity":
       state.setupWaiting = true;
-      updateStatusBar();
       copySetupCommand();
       break;
     case "rebuild":
@@ -1064,14 +1120,16 @@ async function handleAction(action) {
         "'graphify update .' copied! Paste to your LLM to rebuild. You'll get a confirmation when the rebuild completes.",
       );
       break;
-    case "test-glow":
-      state.lastTriggerSource = "test-glow";
-      triggerActivity();
+    case "toggle-green": {
+      const config = vscode.workspace.getConfiguration("graphify-stats");
+      const current = config.get("activityIndicator.enabled", true);
+      await config.update("activityIndicator.enabled", !current, true);
       updateStatusBar();
       vscode.window.showInformationMessage(
-        "Test glow activated! The status bar will stay green for 30 seconds.",
+        `Green indicators ${!current ? "enabled" : "muted"}. Status bar colors are now ${!current ? "on" : "off"}.`,
       );
       break;
+    }
     case "copy-setup":
       await vscode.env.clipboard.writeText(
         "uv tool install graphifyy && graphify install && graphify .",
@@ -1123,13 +1181,61 @@ async function handleAction(action) {
         const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(jsonPath));
         await vscode.window.showTextDocument(doc);
       } else {
-        vscode.window.showWarningMessage("graphify-out/graph.json not found.");
+        vscode.window.showWarningMessage(
+          "graphify-out/graph.json not found. Run graphify update .",
+        );
       }
       break;
     }
     default:
       console.warn(`GraphifyStats: unhandled action "${action}"`);
   }
+}
+
+function _initForTesting() {
+  outputChannel = vscode.window.createOutputChannel("graphify-stats", { log: true });
+  state = initState();
+  timers = initTimers();
+  lastTriggerTimestamp = 0;
+  statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBar.command = "graphify-stats.click";
+  statusBar.text = "";
+  statusBar.tooltip = null;
+  statusBar.color = undefined;
+}
+
+function _getTestState() {
+  if (!state) return null;
+  return {
+    configured: state.configured,
+    setupWaiting: state.setupWaiting,
+    activityActive: state.activityActive,
+    rebuildRequestedAt: state.rebuildRequestedAt,
+    graphChangedAt: state.graphChangedAt,
+    graphStats: state.graphStats,
+    previousNodeCount: state.previousNodeCount,
+    previousEdgeCount: state.previousEdgeCount,
+    lastTriggerTime: state.lastTriggerTime,
+    lastTriggerSource: state.lastTriggerSource,
+    lastActivityMtime: state.lastActivityMtime,
+    pollingSuspended: state.pollingSuspended,
+    nullPollCount: state.nullPollCount,
+    parseErrorCount: state.parseErrorCount,
+    cachedTooltip: state.cachedTooltip,
+    cachedTooltipHash: state.cachedTooltipHash,
+  };
+}
+
+function _setTestState(partial) {
+  if (state) Object.assign(state, partial);
+}
+
+function _getStatusBar() {
+  return statusBar;
+}
+
+function _setTestConfiguredPath(p) {
+  _testConfiguredPath = p;
 }
 
 module.exports = {
@@ -1144,4 +1250,10 @@ module.exports = {
   showQuickPick,
   copySetupCommand,
   LLM_PROMPT_TEMPLATE,
+  handleAction,
+  _initForTesting,
+  _getTestState,
+  _setTestState,
+  _getStatusBar,
+  _setTestConfiguredPath,
 };

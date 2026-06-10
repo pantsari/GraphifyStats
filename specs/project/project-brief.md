@@ -1,7 +1,7 @@
 # GraphifyStats — Project Brief
 
 Last updated: 2026-06-10
-Status: v0.3.0 preview
+Status: v0.5.0 preview
 Audience: AI agents, human reviewers, the project owner
 
 ## 1. Executive Summary
@@ -74,3 +74,33 @@ test/
   extension.test.js — 58 unit tests
 TODO.md           — ship checklist
 ```
+
+## 6. Setup & Onboarding (LLM Agent Behavior)
+
+When an LLM agent operates in a workspace where `graphify-out/` does not yet
+exist, it MUST complete the setup proactively — never ask the user whether to
+proceed, never present options, never ask "what would you like me to do?"
+This applies universally, including to empty repos. The agent is expected to:
+
+1. Check whether `graphify` is installed (`which graphify`).
+2. If not installed: `uv tool install graphifyy && graphify install`.
+3. Run `graphify .` to build the initial graph (even on empty repos — create
+   `graphify-out/` anyway so the monitoring infrastructure is ready).
+4. Signal activity before every graphify command:
+   `mkdir -p graphify-out && touch graphify-out/.graphify-activity`.
+5. Run the one-time machine setup:
+   `mkdir -p ~/.graphify-stats && touch ~/.graphify-stats/configured`.
+
+The full agent prompt is the single source of truth at `GraphifyLLMsetup.md`.
+This file ships with the extension and is the verbatim prompt given to LLM
+agents instructing them on command selection, rebuild rules, error recovery,
+and anti-patterns.
+
+### Empty repo handling
+
+If the repo is empty (no source files), Graphify may report "no source files
+to build a knowledge graph from." This is expected. The agent MUST still
+create `graphify-out/` and complete the full setup without asking any
+questions. The monitoring infrastructure is ready. Run `graphify update .`
+later once source files exist. Under no circumstances may the agent skip
+setup or ask the user what to do because the repo is empty.

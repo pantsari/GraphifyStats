@@ -8,6 +8,12 @@ coding assistant — all without leaving the editor.
 Works with **any LLM platform** that runs Graphify: Claude Code, OpenCode,
 Codex, Cursor, Gemini CLI, and more.
 
+![GraphifyStats command palette — One Prompt setup for installing and configuring Graphify](./GraphifyStats3.png)
+
+![GraphifyStats QuickPick command palette with stats, actions, and setup options](./GraphifyStats.png)
+
+![GraphifyStats status bar showing live node count, edge count, trigger time, and graph health](./GraphifyStats2.png)
+
 ## Features
 
 - **Live graph stats in the status bar** — node/edge counts with delta tracking
@@ -15,71 +21,24 @@ Codex, Cursor, Gemini CLI, and more.
 - **Health scoring** — Excellent / Good / Fair / Poor based on ambiguous edge ratio
 - **Density labels** — Sparse / Typical / Dense alongside raw density
 - **Confidence-weighted god nodes** — EXTRACTED edges weighted higher than INFERRED/AMBIGUOUS
-- **Detailed Markdown tooltip** — hover to see communities, file count, god nodes, health, remediation guidance
-- **QuickPick command palette** — click the status bar or `Cmd+Shift+G Cmd+S` to
-  refresh stats, rebuild graph, test activity glow, or open visualization
+- **Compact hover tooltip** — hover for communities, file count, god nodes, health, and activity history
+- **QuickPick command palette** — click the status bar to
+  refresh stats, rebuild graph, run setup again, or open visualization
 - **Graph.json change detection** — `onDidSaveTextDocument` for in-editor saves,
   plus `fs.watch` + polling for external changes (terminal/LLM)
 - **Zero runtime dependencies** — built entirely on the VS Code Extension API
   and Node.js built-in modules
-- **Keyboard shortcut** — `Cmd+Shift+G Cmd+S` (Mac) / `Ctrl+Shift+G Ctrl+S` opens QuickPick
-
-## Setup
-
-### 1. Install Graphify
-
-```
-uv tool install graphifyy && graphify install && graphify .
-```
-
-Paste into your terminal or AI assistant.
-
-### 2. Configure activity monitoring
-
-Click the status bar → **Setup Activity Monitoring** → paste the commands and LLM prompt to your AI agent.
-The copied text includes:
-
-- Shell commands to create the marker file
-- A natural-language LLM prompt your agent will understand
-
-### 3. Your LLM signals activity
-
-After every `graphify` command (`query`, `explain`, `path`, `update`), your LLM runs:
-
-**Mac/Linux:**
-
-```
-touch graphify-out/.graphify-activity
-```
-
-**Windows (cmd):**
-
-```
-type NUL > graphify-out\.graphify-activity
-```
-
-**Windows (PowerShell):**
-
-```
-New-Item -ItemType File -Force -Path graphify-out\.graphify-activity | Out-Null
-```
-
-The status bar glows green for 30 seconds each time.
-
-Alternatively, LLMs that can call VS Code commands can use:
-
-```
-graphify-stats.indicateActivity
-```
 
 ## Usage
 
-The status bar shows: `$(pulse) Graphify: 1.2K N (+12) · 890 E · now · active`
+The status bar shows: `$(graph) Graphify: 1.2K N (+12) · 890 E · 5m · 2m`
 
-- **Green glow** = your LLM just used Graphify
+- **Green glow** = graph was recently updated or your LLM just used Graphify
+- **Delta brackets (+12 / -3)** = node/edge changes after `graphify update` (auto-hide after 30s)
 - **Warning color** = graph is stale (>1h) or has high ambiguity (>30%)
 - **Error color** = graph is very stale (>6h)
-- **Click** for QuickPick actions (Refresh, Rebuild, Test Glow, View Graph, etc.)
+- **Trigger time** = how long ago your LLM last used Graphify (e.g. `2m`)
+- **Click** for QuickPick actions (Refresh, Rebuild, Run Setup Again, View Graph, etc.)
 
 ## How it works
 
@@ -96,8 +55,8 @@ The status bar shows: `$(pulse) Graphify: 1.2K N (+12) · 890 E · now · active
 
 - Verify `~/.graphify-stats/configured` exists (created during setup)
 - Verify `graphify-out/.graphify-activity` exists in your workspace
-- Run **Test Activity Glow** from QuickPick to verify the visual indicator works
 - Check the extension's output channel: **View → Output → graphify-stats**
+- Re-run setup via QuickPick → **Run Setup Again**
 
 **Parse errors?**
 
@@ -110,7 +69,17 @@ The status bar shows: `$(pulse) Graphify: 1.2K N (+12) · 890 E · now · active
 
 **Setup notification won't reappear?**
 
-- The notification shows once per VS Code installation. Use QuickPick → Setup Activity Monitoring to access it anytime.
+- The notification shows once per VS Code installation. Use QuickPick → **Run Setup Again** to access it anytime.
+
+## Commands
+
+The extension contributes these commands (usable via `Cmd+Shift+P` or keybindings):
+
+| Command                           | Description                                                                                                                                |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `graphify-stats.click`            | Open the QuickPick command palette                                                                                                         |
+| `graphify-stats.indicateActivity` | Signal Graphify activity (for LLMs with VS Code command access). Accepts `{ command: "graphify query" }` to record which command was used. |
+| `graphify-stats.getState`         | Return current state as JSON (configured, activityActive, nodeCount, edgeCount, etc.)                                                      |
 
 ## Requirements
 
