@@ -1,0 +1,107 @@
+{
+  "name": "graphify-stats",
+  "displayName": "GraphifyStats — Knowledge Graph Monitor",
+  "description": "GraphifyStats monitors your Graphify knowledge graph in the VS Code status bar. Shows live node/edge counts, community stats, and god nodes. Your LLM signals activity by touching a file — the status bar glows green for 30 seconds after each trigger. Works with any LLM platform.",
+  "version": "0.3.0",
+  "preview": true,
+  "publisher": "pantsari",
+  "license": "MIT",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#7C3AED",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "graphify",
+    "knowledge-graph",
+    "graph",
+    "stats",
+    "monitor",
+    "activity",
+    "status-bar",
+    "ai",
+    "llm",
+    "agent",
+    "claude-code",
+    "opencode",
+    "codex",
+    "cursor",
+    "gemini"
+  ],
+  "activationEvents": [
+    "workspaceContains:graphify-out/graph.json",
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "GraphifyStats",
+      "properties": {
+        "graphify-stats.pollInterval": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "How often (in seconds) to poll graph.json for stat updates and check the configured marker."
+        },
+        "graphify-stats.activityIndicator.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Turn the status bar text green when your LLM signals Graphify activity."
+        },
+        "graphify-stats.activityIndicator.durationSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 120,
+          "description": "How long (in seconds) the status bar stays green after activity is signaled."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "graphify-stats.click",
+        "title": "GraphifyStats: Open QuickPick"
+      },
+      {
+        "command": "graphify-stats.indicateActivity",
+        "title": "GraphifyStats: Indicate Graphify Activity"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "graphify-stats.click",
+        "key": "ctrl+shift+g ctrl+s",
+        "mac": "cmd+shift+g cmd+s",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pantsari/graphify-stats"
+  },
+  "bugs": {
+    "url": "https://github.com/pantsari/graphify-stats/issues"
+  },
+  "scripts": {
+    "package": "vsce package",
+    "prepackage": "npm test && npm run lint",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.2",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "vitest": "^3.0.0"
+  }
+}

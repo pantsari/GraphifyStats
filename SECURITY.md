@@ -1,0 +1,26 @@
+# Security Policy
+
+## Reporting a Vulnerability
+
+If you discover a security vulnerability in this extension, please report it
+privately via [GitHub Security
+Advisories](https://github.com/pantsari/graphify-stats/security/advisories/new).
+
+Do not open a public issue. I will respond within 48 hours and work with you
+on a fix and coordinated disclosure timeline.
+
+## Scope
+
+This extension stores your GitHub token using VS Code
+[SecretStorage](https://code.visualstudio.com/api/references/vscode-api#SecretStorage).
+The token is never logged, written to disk in plaintext, or sent to any server
+other than `api.github.com` over HTTPS.
+
+If you find a code path that could leak the token — for example into an error
+message, log output, clipboard, or any third-party service — please report it.
+
+## Supported Versions
+
+| Version | Supported |
+| ------- | --------- |
+| 0.1.x   | Yes       |
