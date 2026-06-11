@@ -8,11 +8,11 @@ coding assistant — all without leaving the editor.
 Works with **any LLM platform** that runs Graphify: Claude Code, OpenCode,
 Codex, Cursor, Gemini CLI, and more.
 
-![GraphifyStats command palette — One Prompt setup for installing and configuring Graphify](./GraphifyStats3.png)
+![GraphifyStats command palette — One Prompt setup for installing and configuring Graphify](https://raw.githubusercontent.com/pantsari/graphify-stats/main/GraphifyStats3.png)
 
-![GraphifyStats QuickPick command palette with stats, actions, and setup options](./GraphifyStats.png)
+![GraphifyStats QuickPick command palette with stats, actions, and setup options](https://raw.githubusercontent.com/pantsari/graphify-stats/main/GraphifyStats.png)
 
-![GraphifyStats status bar showing live node count, edge count, trigger time, and graph health](./GraphifyStats2.png)
+![GraphifyStats status bar showing live node count, edge count, trigger time, and graph health](https://raw.githubusercontent.com/pantsari/graphify-stats/main/GraphifyStats2.png)
 
 ## Features
 
