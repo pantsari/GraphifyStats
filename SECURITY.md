@@ -4,7 +4,7 @@
 
 If you discover a security vulnerability in this extension, please report it
 privately via [GitHub Security
-Advisories](https://github.com/pantsari/graphify-stats/security/advisories/new).
+Advisories](https://github.com/pantsari/GraphifyStats/security/advisories/new).
 
 Do not open a public issue. I will respond within 48 hours and work with you
 on a fix and coordinated disclosure timeline.

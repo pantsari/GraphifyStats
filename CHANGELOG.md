@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.2] - 2026-06-11
+
+### Fixed
+
+- Fix repository URLs in package.json, README, CONTRIBUTING.md, and SECURITY.md to use the correct GitHub repo name (`GraphifyStats` instead of `graphify-stats`)
+
 ## [1.0.0] - 2026-06-11
 
 ### First public release

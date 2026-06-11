@@ -5,8 +5,8 @@ Thanks for considering a contribution.
 ## Setup
 
 ```bash
-git clone https://github.com/pantsari/graphify-stats.git
-cd graphify-stats
+git clone https://github.com/pantsari/GraphifyStats.git
+cd GraphifyStats
 npm install
 ```
 

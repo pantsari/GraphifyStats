@@ -2,7 +2,7 @@
   "name": "graphify-stats",
   "displayName": "GraphifyStats",
   "description": "Graphify knowledge graph monitor for the VS Code status bar. One prompt installs, sets up, and configures Graphify through your AI coding agent. See live node/edge counts, community stats, graph health, and recent LLM activity — all at a glance.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "pantsari",
   "license": "MIT",
   "icon": "icon.png",
@@ -94,10 +94,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/pantsari/graphify-stats"
+    "url": "https://github.com/pantsari/GraphifyStats"
   },
   "bugs": {
-    "url": "https://github.com/pantsari/graphify-stats/issues"
+    "url": "https://github.com/pantsari/GraphifyStats/issues"
   },
   "scripts": {
     "package": "vsce package",
