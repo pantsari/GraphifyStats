@@ -471,7 +471,7 @@ describe("triggerActivity timeout", () => {
     mod._initForTesting();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
   });
 
@@ -526,7 +526,7 @@ describe("pollConfigured detection", () => {
     mod._setTestConfiguredPath(configuredFile);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     try {
       fs.unlinkSync(configuredFile);
     } catch {
@@ -666,10 +666,15 @@ describe("tooltip caching", () => {
     vscode.workspace.workspaceFolders = [{ uri: { fsPath: tmpDir } }];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vscode.workspace.workspaceFolders = null;
     try {
-      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await fs.promises.rm(tmpDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
     } catch {
       /* ok */
     }
@@ -760,10 +765,15 @@ describe("graphChangedAt delta logic", () => {
     vscode.workspace.workspaceFolders = [{ uri: { fsPath: tmpDir } }];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vscode.workspace.workspaceFolders = null;
     try {
-      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await fs.promises.rm(tmpDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
     } catch {
       /* ok */
     }
@@ -959,7 +969,12 @@ describe("handleAction", () => {
       expect(webviewSpy).toHaveBeenCalled();
 
       vscode.workspace.workspaceFolders = null;
-      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await fs.promises.rm(tmpDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
     });
   });
 

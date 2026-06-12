@@ -28,13 +28,13 @@ describe("multi-root workspace selection", () => {
     roots = [];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     mod.deactivate();
     vi.restoreAllMocks();
     vscode.workspace.workspaceFolders = null;
     vscode.window.activeTextEditor = undefined;
     for (const root of roots) {
-      fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 

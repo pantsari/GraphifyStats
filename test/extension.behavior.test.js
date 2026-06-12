@@ -69,12 +69,17 @@ describe("extension behavior", () => {
     vscode.workspace.workspaceFolders = [{ uri: { fsPath: workspaceRoot } }];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     mod.deactivate();
     vi.useRealTimers();
     vi.restoreAllMocks();
     vscode.workspace.workspaceFolders = null;
-    fs.rmSync(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await fs.promises.rm(workspaceRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
   });
 
   it("tracks activity marker creation, changes, and removal", () => {

@@ -18,9 +18,9 @@ describe("stats file I/O", () => {
     graphPath = path.join(tmpDir, "graph.json");
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
-    fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await fs.promises.rm(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it("reads valid JSON through safeReadGraph", async () => {
