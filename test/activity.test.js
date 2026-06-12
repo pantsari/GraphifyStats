@@ -165,7 +165,7 @@ describe("activity JSON protocol integration", () => {
     mod.deactivate();
     vi.restoreAllMocks();
     vscode.workspace.workspaceFolders = null;
-    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    fs.rmSync(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   function writeEvent(event, mtimeOffsetSeconds) {

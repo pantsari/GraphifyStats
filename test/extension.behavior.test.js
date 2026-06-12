@@ -74,7 +74,7 @@ describe("extension behavior", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vscode.workspace.workspaceFolders = null;
-    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    fs.rmSync(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it("tracks activity marker creation, changes, and removal", () => {

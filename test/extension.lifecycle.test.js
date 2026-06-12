@@ -46,7 +46,7 @@ describe("extension lifecycle regressions", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vscode.workspace.workspaceFolders = null;
-    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    fs.rmSync(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it("removes the green activity color when the configured duration expires", async () => {

@@ -122,7 +122,7 @@ describe("installAgentInstructions command", () => {
     mod.deactivate();
     vi.restoreAllMocks();
     vscode.workspace.workspaceFolders = null;
-    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    fs.rmSync(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it("writes the selected adapter files, creating nested directories", async () => {

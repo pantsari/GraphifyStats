@@ -669,7 +669,7 @@ describe("tooltip caching", () => {
   afterEach(() => {
     vscode.workspace.workspaceFolders = null;
     try {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     } catch {
       /* ok */
     }
@@ -763,7 +763,7 @@ describe("graphChangedAt delta logic", () => {
   afterEach(() => {
     vscode.workspace.workspaceFolders = null;
     try {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     } catch {
       /* ok */
     }
@@ -959,7 +959,7 @@ describe("handleAction", () => {
       expect(webviewSpy).toHaveBeenCalled();
 
       vscode.workspace.workspaceFolders = null;
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     });
   });
 
