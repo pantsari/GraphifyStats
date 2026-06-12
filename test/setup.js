@@ -62,12 +62,29 @@ function createVscodeMock() {
       showWarningMessage: () => Promise.resolve(undefined),
       showErrorMessage: () => Promise.resolve(undefined),
       showTextDocument: () => Promise.resolve(),
+      activeTextEditor: undefined,
+      onDidChangeActiveTextEditor: () => ({ dispose: () => {} }),
     },
     StatusBarAlignment: { Right: 1, Left: 2 },
     QuickPickItemKind: { Separator: -1 },
-    ThemeIcon: class {},
-    ThemeColor: class {},
+    ThemeIcon: class {
+      constructor(id, color) {
+        this.id = id;
+        this.color = color;
+      }
+    },
+    ThemeColor: class {
+      constructor(id) {
+        this.id = id;
+      }
+    },
     MarkdownString: MockMarkdownString,
+    RelativePattern: class {
+      constructor(base, pattern) {
+        this.base = base;
+        this.pattern = pattern;
+      }
+    },
     ViewColumn: { One: 1 },
     commands: { registerCommand: () => ({ dispose: () => {} }) },
     env: {
@@ -86,6 +103,25 @@ function createVscodeMock() {
       getWorkspaceFolder: () => null,
       onDidChangeWorkspaceFolders: () => ({ dispose: () => {} }),
       onDidSaveTextDocument: () => ({ dispose: () => {} }),
+      createFileSystemWatcher: () => {
+        const watcher = {
+          dispose: () => {},
+          handlers: {},
+        };
+        watcher.onDidCreate = (handler) => {
+          watcher.handlers.create = handler;
+          return { dispose: () => {} };
+        };
+        watcher.onDidChange = (handler) => {
+          watcher.handlers.change = handler;
+          return { dispose: () => {} };
+        };
+        watcher.onDidDelete = (handler) => {
+          watcher.handlers.delete = handler;
+          return { dispose: () => {} };
+        };
+        return watcher;
+      },
       workspaceFolders: null,
     },
   };

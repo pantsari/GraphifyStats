@@ -12,8 +12,15 @@ CONTRIBUTING.md
 SECURITY.md
 specs/**
 test/**
+coverage/**
+graphify-out/**
+image.png
 TODO.md
 vitest.config.*
 node_modules/**
 *.vsix
 .opencode/**
+.claude/**
+.codex/**
+.cursor/**
+.agents/**

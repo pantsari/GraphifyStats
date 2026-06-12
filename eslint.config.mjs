@@ -1,7 +1,7 @@
 /** @type {import("eslint").Linter.Config[]} */
 export default [
   {
-    ignores: ["node_modules/**", "*.vsix"],
+    ignores: ["node_modules/**", "coverage/**", "*.vsix"],
   },
   {
     files: ["**/*.js"],

@@ -26,8 +26,16 @@ many nodes/edges it contains, or when an AI agent last ran `/graphify`.
 ### Detection
 
 - `workspaceContains:graphify-out/graph.json` as primary activation event
-- `fs.watch` on `graphify-out/` for near-instant change detection
-- Polling via `setTimeout` chain (sequential, no overlapping) every 5s as backup
+- VS Code `FileSystemWatcher` on `graphify-out/*` in every workspace folder
+  (remote/WSL/virtual-workspace safe), with non-recursive `fs.watch` as local
+  fallback; graph.json events debounced by 250ms to absorb rebuild storms
+- Multi-root: the monitored folder is the active editor's folder when it has a
+  graph, else the first folder containing `graphify-out/`, else the first folder
+- Polling via a coalescing single-flight `setTimeout` chain every 5s as backup;
+  unchanged polls still re-render so relative timestamps age
+- Optional v1 activity events from `graphify-out/.graphify-activity.json`
+  (status start/done/error, command, agent) drive a running spinner and history;
+  `.graphify-activity` touch file remains the baseline signal
 - `onDidSaveTextDocument` triggers immediate re-read for in-editor saves
 - Polling suspends after 2 consecutive null polls (headless/remote guard)
 
@@ -49,7 +57,8 @@ many nodes/edges it contains, or when an AI agent last ran `/graphify`.
 ### UI
 
 - `extension.js` — activation, state management, polling, UI rendering
-- Status bar with `$(pulse)` icon during activity, green color
+- Status bar with a green activity color that is explicitly cleared after the
+  configured duration
 - `vscode.MarkdownString` tooltips with semantic headings
 - `accessibilityInformation` aria-labels with activity state
 - QuickPick with grouped Actions and Open sections
@@ -70,8 +79,13 @@ No npm runtime dependencies. Dev dependencies only: `@vscode/vsce`, `eslint`, `p
 ```
 extension.js      — activate/deactivate, polling, UI, commands
 lib/stats.js      — computeGraphStats, formatCount, healthLabel, sanitizeText, time helpers
+lib/agents.js     — agent rule-file adapters and marker-managed block rendering
 test/
-  extension.test.js — 58 unit tests
+  extension.test.js — pure stats and extension behavior tests
+  extension.lifecycle.test.js — watcher, polling, and effect-expiry regressions
+  extension.behavior.test.js — filesystem, UI-state, and command behavior
+  stats.io.test.js — graph read and size-guard behavior
+  agents.test.js — adapter catalog, managed-block rendering, install command
 TODO.md           — ship checklist
 ```
 

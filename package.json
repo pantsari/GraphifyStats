@@ -1,8 +1,8 @@
 {
   "name": "graphify-stats",
   "displayName": "GraphifyStats",
-  "description": "Graphify knowledge graph monitor for the VS Code status bar. One prompt installs, sets up, and configures Graphify through your AI coding agent. See live node/edge counts, community stats, graph health, and recent LLM activity — all at a glance.",
-  "version": "1.0.2",
+  "description": "Graphify knowledge graph monitor for the VS Code status bar — built for every AI coding agent. One command writes Graphify rules for Claude Code, Codex, Copilot, Cursor, Gemini, Windsurf, Cline, and Continue. Live node/edge counts, graph health, a running spinner while your agent rebuilds, and a per-command activity log — all at a glance.",
+  "version": "2.0.0",
   "publisher": "pantsari",
   "license": "MIT",
   "icon": "icon.png",
@@ -48,7 +48,15 @@
     "anthropic",
     "openai",
     "copilot",
-    "agent"
+    "agent",
+    "claude",
+    "codex",
+    "cursor",
+    "gemini",
+    "deepseek",
+    "cline",
+    "agents-md",
+    "skills"
   ],
   "activationEvents": [
     "workspaceContains:graphify-out/graph.json",
@@ -88,6 +96,10 @@
       {
         "command": "graphify-stats.indicateActivity",
         "title": "GraphifyStats: Indicate Graphify Activity"
+      },
+      {
+        "command": "graphify-stats.installAgentInstructions",
+        "title": "GraphifyStats: Add Agent Instructions to Workspace"
       }
     ],
     "keybindings": []
@@ -105,9 +117,11 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.6",
     "@vscode/vsce": "^3.9.2",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
