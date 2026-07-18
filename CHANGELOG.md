@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1] - 2026-07-18
+
+### Added
+
+- Clickable badges in the README (CI status, marketplace version, license, zero
+  runtime dependencies)
+
 ## [2.0.0] - 2026-06-12
 
 GraphifyStats 2.0 turns the status bar monitor into a full cross-agent companion

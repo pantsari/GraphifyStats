@@ -1,5 +1,10 @@
 # GraphifyStats
 
+[![CI](https://github.com/pantsari/GraphifyStats/actions/workflows/ci.yml/badge.svg)](https://github.com/pantsari/GraphifyStats/actions/workflows/ci.yml)
+[![Marketplace version](https://vsmarketplacebadges.dev/version/pantsari.graphify-stats.svg)](https://marketplace.visualstudio.com/items?itemName=pantsari.graphify-stats)
+[![License: MIT](https://img.shields.io/github/license/pantsari/GraphifyStats)](https://github.com/pantsari/GraphifyStats/blob/main/LICENSE)
+[![Runtime dependencies: zero](https://img.shields.io/badge/runtime%20dependencies-zero-brightgreen)](https://github.com/pantsari/GraphifyStats/blob/main/specs/decisions/0001-zero-dependencies.md)
+
 Monitor your [Graphify](https://graphifylabs.ai) knowledge graph stats right
 inside the VS Code status bar. See node count, edge count, community info,
 god nodes, graph health, and when Graphify was last triggered by your AI
