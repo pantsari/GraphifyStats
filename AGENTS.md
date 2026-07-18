@@ -3,7 +3,7 @@
 
 # Graphify Agent Instructions
 
-Target Graphify >=0.1.0 · Last updated 2026-06-12
+Target Graphify >=0.1.0 · Last updated 2026-07-18
 
 **IMPORTANT:** When you start in a workspace that lacks `graphify-out/` (including empty repos with zero files), you MUST complete the setup below immediately. Do NOT ask. Do NOT present options. Do NOT ask "what would you like me to do?" The user has already opted in.
 
@@ -68,6 +68,8 @@ graphify .
 
 Tell the user: "Building the knowledge graph — may take up to 2 minutes."
 
+**Git:** If the workspace is a git repository, make sure `.gitignore` contains a `graphify-out/` line (create `.gitignore` if missing — edit the file rather than blind-appending, so re-runs don't duplicate the line). Everything in `graphify-out/` is generated, per-machine state: the graph is rebuildable with `graphify update .`, and the activity files change on every command. Never commit it.
+
 **Empty repo:** Graphify may report "no source files to build a knowledge graph from." This is expected on empty repos. Proceed anyway — create `graphify-out/` and complete the remaining steps.
 
 **CRITICAL:** The moment the first code files are created in the workspace, you MUST run `graphify update .` to populate the graph. The GraphifyStats extension will show "Run graphify update" in the status bar until this is done. Do NOT skip this — an empty graph is useless for querying. The stale-graph check at the top of this file will detect empty graphs on subsequent sessions, but you should run `graphify update .` as soon as you create files.
@@ -87,6 +89,7 @@ Run ONCE per machine. Enables permanent activity tracking — persists across re
 Confirm all of these exist:
 
 - `graphify-out/` directory in workspace root
+- `graphify-out/` listed in `.gitignore` (git repos only)
 - `~/.graphify-stats/configured` marker file
 - `AGENTS.md` in workspace root (contains these instructions)
 

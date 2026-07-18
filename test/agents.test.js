@@ -149,6 +149,17 @@ describe("installAgentInstructions command", () => {
     expect(cursorRule).toContain(BEGIN_MARKER);
   });
 
+  it("tells agents to keep graphify-out/ out of git", async () => {
+    vi.spyOn(vscode.window, "showQuickPick").mockImplementation((items) =>
+      Promise.resolve(items.filter((item) => item.label === "AGENTS.md")),
+    );
+
+    await mod.installAgentInstructions();
+
+    const agentsMd = fs.readFileSync(path.join(workspaceRoot, "AGENTS.md"), "utf-8");
+    expect(agentsMd).toContain(".gitignore");
+  });
+
   it("preserves user content outside the managed block on re-run", async () => {
     vi.spyOn(vscode.window, "showQuickPick").mockImplementation((items) =>
       Promise.resolve(items.filter((item) => item.label === "AGENTS.md")),

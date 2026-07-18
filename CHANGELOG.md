@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.2] - 2026-07-18
+
+### Added
+
+- Agent setup instructions now tell coding agents to add `graphify-out/` to
+  `.gitignore` — the graph is generated, per-machine state (rebuildable with
+  `graphify update .`), and the activity files change on every command, so it
+  should never be committed
+
 ## [2.0.1] - 2026-07-18
 
 ### Added

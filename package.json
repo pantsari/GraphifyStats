@@ -2,7 +2,7 @@
   "name": "graphify-stats",
   "displayName": "GraphifyStats",
   "description": "Graphify knowledge graph monitor for the VS Code status bar — built for every AI coding agent. One command writes Graphify rules for Claude Code, Codex, Copilot, Cursor, Gemini, Windsurf, Cline, and Continue. Live node/edge counts, graph health, a running spinner while your agent rebuilds, and a per-command activity log — all at a glance.",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "publisher": "pantsari",
   "license": "MIT",
   "icon": "icon.png",
